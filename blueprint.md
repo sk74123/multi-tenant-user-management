@@ -26,7 +26,21 @@ data strictly isolated.
 
 ---
 
-## 2. Tech Stack
+## 2. Progress Tracker
+
+| Phase | Description | Status | Commits / Verifications |
+|---|---|---|---|
+| **Phase 1** | Foundation (Docker, Postgres, Migrations, Seed, Domain structs, Utils) | **COMPLETED** ✅ | `a304c0e` — All 9 DB tables, seed data, /health endpoint |
+| **Phase 2** | Tenant & User CRUD (Tenant isolation, Soft delete, Pagination, Validation) | **COMPLETED** ✅ | `d15f330`..`109205f` — Tested 10/10 E2E scenarios, 404 cross-tenant isolation verified |
+| **Phase 3** | Roles & Permissions (RBAC, Role-permission & User-role mappings, Effective permissions) | **PENDING (NEXT)** ⏳ | Ready to start |
+| **Phase 4** | Authentication & Authorization (Bcrypt, JWT access+refresh tokens, Auth middleware, Cache) | **PENDING** ⚪ | — |
+| **Phase 5** | Audit Logging (Mutation audit logs, actor, action, diffs, query endpoint) | **PENDING** ⚪ | — |
+| **Phase 6** | Automated Tests (Unit, Integration, Cross-tenant isolation test suite) | **PENDING** ⚪ | — |
+| **Phase 7** | Documentation & Polish (Swagger OpenAPI, Design Doc, ER diagram, Final README) | **PENDING** ⚪ | — |
+
+---
+
+## 3. Tech Stack
 
 | Component | Choice | Why |
 |---|---|---|
@@ -221,48 +235,45 @@ Standard JSON response envelope:
 
 ## 7. Phases
 
-### Phase 1 — Foundation
+### Phase 1 — Foundation `[COMPLETED ✅]`
 **Goal:** Runnable project skeleton with Docker, DB connection, migrations, and helpers.
 
 **Delivers:**
-- `go.mod` with all dependencies
-- `docker-compose.yml` (postgres + app)
-- `Dockerfile` (multi-stage)
-- `Makefile` (common commands)
-- `.env.example`
-- `internal/config/` — config loader
-- `internal/database/` — pgxpool setup
-- `internal/common/` — errors, pagination, response, validator
-- `internal/domain/` — all domain structs
-- `migrations/` — all 9 tables (up + down)
-- `migrations/seed.sql` — default tenant, admin user, roles, permissions
-- `cmd/server/main.go` — boots server, runs migrations, health-check endpoint
+- [x] `go.mod` with all dependencies
+- [x] `docker-compose.yml` (postgres + app)
+- [x] `Dockerfile` (multi-stage)
+- [x] `Makefile` (common commands)
+- [x] `.env.example`
+- [x] `internal/config/` — config loader
+- [x] `internal/database/` — pgxpool setup
+- [x] `internal/common/` — errors, pagination, response, validator
+- [x] `internal/domain/` — all domain structs
+- [x] `migrations/` — all 9 tables (up + down)
+- [x] `migrations/seed.sql` — default tenant, admin user, roles, permissions
+- [x] `cmd/server/main.go` — boots server, runs migrations, health-check endpoint
 
-**Done when:** `docker compose up` starts the app, runs migrations, and
-`GET /health` returns `200`.
+**Status:** Completed in commit `a304c0e`. Verified `GET /health` returns `200` with DB status ok.
 
 ---
 
-### Phase 2 — Tenant & User CRUD
+### Phase 2 — Tenant & User CRUD `[COMPLETED ✅]`
 **Goal:** Full CRUD for tenants and users with tenant isolation.
 
 **Delivers:**
-- `internal/tenant/` — handler, service, repository
-- `internal/user/` — handler, service, repository (with soft-delete)
-- Routes wired in `main.go`
-- Input validation on all create/update endpoints
-- Pagination + filtering on list endpoints
-- Tenant-scoped queries (`WHERE tenant_id = $1`)
+- [x] `internal/tenant/` — handler, service, repository
+- [x] `internal/user/` — handler, service, repository (with soft-delete)
+- [x] Routes wired in `main.go`
+- [x] Input validation on all create/update endpoints
+- [x] Pagination + filtering on list endpoints
+- [x] Tenant-scoped queries (`WHERE tenant_id = $1`)
+- [x] Header-based tenant extraction middleware (`internal/middleware/tenant.go`)
+- [x] Generated `go.sum` and optimized Docker layer caching
 
-**Done when:** Can create tenants, create users in a tenant, list/update/soft-delete
-users, and pagination works.
-
-> Note: Auth middleware is **not** enforced yet — tenant_id comes from a
-> header (`X-Tenant-ID`) temporarily so we can test. Phase 3 replaces this.
+**Status:** Completed in commits `d15f330`..`109205f`. All 10 E2E integration test scenarios verified including cross-tenant 404 isolation.
 
 ---
 
-### Phase 3 — Roles & Permissions (RBAC)
+### Phase 3 — Roles & Permissions (RBAC) `[READY TO START ⏳]`
 **Goal:** Tenant-scoped roles, global permissions, and role ↔ permission + user ↔ role mappings.
 
 **Delivers:**
