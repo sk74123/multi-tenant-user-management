@@ -16,6 +16,8 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 
+	"github.com/yourusername/multi-tenant-user-management/internal/audit"
+	"github.com/yourusername/multi-tenant-user-management/internal/auth"
 	"github.com/yourusername/multi-tenant-user-management/internal/common"
 	"github.com/yourusername/multi-tenant-user-management/internal/config"
 	"github.com/yourusername/multi-tenant-user-management/internal/database"
@@ -48,25 +50,44 @@ func main() {
 	log.Println("database connection pool established")
 
 	// ── Wire dependencies ─────────────────────────────────────────────────────
+	// In-memory permission cache (TTL 5 minutes, invalidated on RBAC changes)
+	permCache := appmiddleware.NewPermissionCache(5 * time.Minute)
+
 	// Tenant
 	tenantRepo := tenant.NewRepository(pool)
 	tenantSvc := tenant.NewService(tenantRepo)
-	tenantHandler := tenant.NewHandler(tenantSvc)
 
 	// User
 	userRepo := user.NewRepository(pool)
 	userSvc := user.NewService(userRepo, cfg.Bcrypt.Cost)
-	userHandler := user.NewHandler(userSvc)
 
 	// Permission
 	permissionRepo := permission.NewRepository(pool)
 	permissionSvc := permission.NewService(permissionRepo)
-	permissionHandler := permission.NewHandler(permissionSvc)
 
 	// Role (RBAC)
 	roleRepo := role.NewRepository(pool)
-	roleSvc := role.NewService(roleRepo, permissionRepo, userRepo)
-	roleHandler := role.NewHandler(roleSvc)
+	roleSvc := role.NewService(roleRepo, permissionRepo, userRepo, permCache)
+
+	// Auth (JWT + Refresh Tokens)
+	jwtManager := auth.NewJWTManager(cfg.JWT)
+	authRepo := auth.NewRepository(pool)
+	authSvc := auth.NewService(authRepo, userRepo, tenantRepo, jwtManager, cfg.Bcrypt.Cost)
+	authHandler := auth.NewHandler(authSvc)
+
+	// Audit
+	auditRepo := audit.NewRepository(pool)
+	auditSvc := audit.NewService(auditRepo)
+
+	// Permission authorizer
+	permAuth := appmiddleware.NewPermissionAuthorizer(roleRepo, permCache)
+
+	// Handlers with per-route permission enforcement
+	tenantHandler := tenant.NewHandler(tenantSvc).WithPermissionCheck(permAuth.Require)
+	userHandler := user.NewHandler(userSvc).WithPermissionCheck(permAuth.Require)
+	roleHandler := role.NewHandler(roleSvc).WithPermissionCheck(permAuth.Require)
+	permissionHandler := permission.NewHandler(permissionSvc).WithPermissionCheck(permAuth.Require)
+	auditHandler := audit.NewHandler(auditSvc).WithPermissionCheck(permAuth.Require)
 
 	// ── Build router ──────────────────────────────────────────────────────────
 	r := chi.NewRouter()
@@ -83,15 +104,23 @@ func main() {
 
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
-		// Temporary Phase 2 middleware: tenant from X-Tenant-ID header.
-		// Phase 4 replaces this with JWT-based tenant extraction.
-		r.Use(appmiddleware.TenantFromHeader)
+		// Automatic mutation audit logging middleware
+		r.Use(appmiddleware.Audit(auditSvc))
 
-		// Domain routes
-		tenantHandler.RegisterRoutes(r)
-		userHandler.RegisterRoutes(r)
-		roleHandler.RegisterRoutes(r)
-		permissionHandler.RegisterRoutes(r)
+		// Public auth routes (no JWT required)
+		authHandler.RegisterPublicRoutes(r)
+
+		// Protected routes (JWT required; tenant_id comes strictly from token)
+		r.Group(func(r chi.Router) {
+			r.Use(appmiddleware.Authenticate(jwtManager))
+
+			authHandler.RegisterProtectedRoutes(r)
+			tenantHandler.RegisterRoutes(r)
+			userHandler.RegisterRoutes(r)
+			roleHandler.RegisterRoutes(r)
+			permissionHandler.RegisterRoutes(r)
+			auditHandler.RegisterRoutes(r)
+		})
 	})
 
 	// ── Start HTTP server ─────────────────────────────────────────────────────
