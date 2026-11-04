@@ -1,0 +1,384 @@
+openapi: 3.0.3
+info:
+  title: Multi-Tenant User Management System API
+  version: 1.0.0
+  description: |
+    Production-grade Multi-Tenant User Management System API with strict tenant isolation,
+    RBAC (roles & permissions), JWT access/refresh token rotation, and automatic audit logging.
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Meta:
+      type: object
+      properties:
+        page: { type: integer, example: 1 }
+        per_page: { type: integer, example: 20 }
+        total: { type: integer, example: 42 }
+    ErrorResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code: { type: string, example: "FORBIDDEN" }
+            message: { type: string, example: "insufficient permissions" }
+    Tenant:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: "Acme Corp" }
+        code: { type: string, example: "acme" }
+        status: { type: string, enum: [active, suspended] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        first_name: { type: string }
+        last_name: { type: string }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Role:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        name: { type: string, example: "admin" }
+        description: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Permission:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        resource: { type: string, example: "user" }
+        action: { type: string, example: "create" }
+        description: { type: string }
+        created_at: { type: string, format: date-time }
+    AuditLog:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        actor_id: { type: string, format: uuid, nullable: true }
+        action: { type: string, example: "user.create" }
+        target_type: { type: string, example: "user" }
+        target_id: { type: string, format: uuid, nullable: true }
+        changes: { type: object }
+        ip_address: { type: string, example: "127.0.0.1" }
+        created_at: { type: string, format: date-time }
+    AuthResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        token_type: { type: string, example: "Bearer" }
+        expires_in: { type: integer, example: 900 }
+        tenant_id: { type: string, format: uuid }
+        user: { $ref: "#/components/schemas/User" }
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a user and join a tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, first_name, last_name]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                first_name: { type: string }
+                last_name: { type: string }
+                tenant_id: { type: string, format: uuid }
+                tenant_code: { type: string, example: "acme" }
+      responses:
+        "201": { description: User registered and tokens issued }
+        "409": { description: Email already exists in tenant }
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Authenticate user and issue JWT access + refresh tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+                tenant_id: { type: string, format: uuid }
+                tenant_code: { type: string, example: "acme" }
+      responses:
+        "200": { description: Authenticated }
+        "401": { description: Invalid credentials }
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate refresh token and issue new token pair
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200": { description: Tokens rotated }
+        "401": { description: Invalid or revoked refresh token }
+  /auth/logout:
+    post:
+      tags: [Auth]
+      security: [{ BearerAuth: [] }]
+      summary: Revoke refresh token
+      responses:
+        "200": { description: Logged out }
+        "401": { description: Unauthorized }
+
+  /tenants:
+    get:
+      tags: [Tenants]
+      security: [{ BearerAuth: [] }]
+      summary: List tenants (requires tenant:read)
+      responses:
+        "200": { description: Paginated tenant list }
+    post:
+      tags: [Tenants]
+      security: [{ BearerAuth: [] }]
+      summary: Create tenant (requires tenant:create or tenant:update)
+      responses:
+        "201": { description: Tenant created }
+        "409": { description: Tenant code already exists }
+
+  /tenants/{id}:
+    get:
+      tags: [Tenants]
+      security: [{ BearerAuth: [] }]
+      summary: Get tenant by ID (requires tenant:read; 404 on cross-tenant)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Tenant details }
+        "404": { description: Not found }
+    patch:
+      tags: [Tenants]
+      security: [{ BearerAuth: [] }]
+      summary: Update tenant (requires tenant:update; 404 on cross-tenant)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Tenant updated }
+        "404": { description: Not found }
+
+  /users:
+    get:
+      tags: [Users]
+      security: [{ BearerAuth: [] }]
+      summary: List users in active tenant (requires user:list)
+      parameters:
+        - { in: query, name: page, schema: { type: integer, default: 1 } }
+        - { in: query, name: per_page, schema: { type: integer, default: 20 } }
+        - { in: query, name: search, schema: { type: string } }
+        - { in: query, name: is_active, schema: { type: boolean } }
+      responses:
+        "200": { description: Paginated user list }
+    post:
+      tags: [Users]
+      security: [{ BearerAuth: [] }]
+      summary: Create user in active tenant (requires user:create)
+      responses:
+        "201": { description: User created }
+        "403": { description: Insufficient permissions }
+        "409": { description: Email already exists }
+
+  /users/{id}:
+    get:
+      tags: [Users]
+      security: [{ BearerAuth: [] }]
+      summary: Get user by ID in active tenant (requires user:read)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: User details }
+        "404": { description: User not found in tenant }
+    patch:
+      tags: [Users]
+      security: [{ BearerAuth: [] }]
+      summary: Update user in active tenant (requires user:update)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: User updated }
+        "404": { description: User not found in tenant }
+    delete:
+      tags: [Users]
+      security: [{ BearerAuth: [] }]
+      summary: Soft-delete user in active tenant (requires user:delete)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: User soft-deleted }
+        "404": { description: User not found in tenant }
+
+  /roles:
+    get:
+      tags: [Roles]
+      security: [{ BearerAuth: [] }]
+      summary: List tenant roles (requires role:list)
+      responses:
+        "200": { description: Paginated role list }
+    post:
+      tags: [Roles]
+      security: [{ BearerAuth: [] }]
+      summary: Create tenant role (requires role:create)
+      responses:
+        "201": { description: Role created }
+
+  /roles/{id}:
+    get:
+      tags: [Roles]
+      security: [{ BearerAuth: [] }]
+      summary: Get role by ID (requires role:read)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Role details }
+        "404": { description: Role not found }
+    patch:
+      tags: [Roles]
+      security: [{ BearerAuth: [] }]
+      summary: Update role (requires role:update)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Role updated }
+    delete:
+      tags: [Roles]
+      security: [{ BearerAuth: [] }]
+      summary: Delete role (requires role:delete)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Role deleted }
+
+  /roles/{id}/permissions:
+    get:
+      tags: [Roles]
+      security: [{ BearerAuth: [] }]
+      summary: List permissions assigned to role (requires role:read)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Role permissions }
+    post:
+      tags: [Roles]
+      security: [{ BearerAuth: [] }]
+      summary: Assign permissions to role (requires role:update)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Updated role permissions }
+
+  /roles/{id}/permissions/{pid}:
+    delete:
+      tags: [Roles]
+      security: [{ BearerAuth: [] }]
+      summary: Remove permission from role (requires role:update)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+        - { in: path, name: pid, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Permission removed from role }
+
+  /users/{id}/roles:
+    get:
+      tags: [User Roles]
+      security: [{ BearerAuth: [] }]
+      summary: List roles held by user in active tenant (requires user:read)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: User roles }
+    post:
+      tags: [User Roles]
+      security: [{ BearerAuth: [] }]
+      summary: Assign roles to user in active tenant (requires user:assign_role)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Updated user roles }
+
+  /users/{id}/roles/{rid}:
+    delete:
+      tags: [User Roles]
+      security: [{ BearerAuth: [] }]
+      summary: Remove role from user in active tenant (requires user:assign_role)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+        - { in: path, name: rid, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Role removed from user }
+
+  /users/{id}/permissions:
+    get:
+      tags: [User Roles]
+      security: [{ BearerAuth: [] }]
+      summary: Get user's effective permissions in active tenant (requires user:read)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Effective permissions union }
+
+  /permissions:
+    get:
+      tags: [Permissions]
+      security: [{ BearerAuth: [] }]
+      summary: List global permissions (requires permission:list)
+      responses:
+        "200": { description: Paginated permission list }
+    post:
+      tags: [Permissions]
+      security: [{ BearerAuth: [] }]
+      summary: Create global permission (requires permission:create)
+      responses:
+        "201": { description: Permission created }
+
+  /audit-logs:
+    get:
+      tags: [Audit Logs]
+      security: [{ BearerAuth: [] }]
+      summary: Query tenant audit logs (requires audit:read)
+      parameters:
+        - { in: query, name: page, schema: { type: integer, default: 1 } }
+        - { in: query, name: per_page, schema: { type: integer, default: 20 } }
+        - { in: query, name: action, schema: { type: string } }
+        - { in: query, name: target_type, schema: { type: string } }
+        - { in: query, name: actor_id, schema: { type: string, format: uuid } }
+        - { in: query, name: target_id, schema: { type: string, format: uuid } }
+        - { in: query, name: from, schema: { type: string, example: "2026-01-01" } }
+        - { in: query, name: to, schema: { type: string, example: "2026-12-31" } }
+      responses:
+        "200": { description: Paginated audit log entries }
+
+
