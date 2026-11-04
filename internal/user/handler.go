@@ -9,9 +9,13 @@ import (
 	"github.com/yourusername/multi-tenant-user-management/internal/common"
 )
 
+// PermissionMiddleware creates a route middleware enforcing one of the given permissions.
+type PermissionMiddleware func(perms ...string) func(http.Handler) http.Handler
+
 // Handler wires HTTP routes to the user service.
 type Handler struct {
-	svc Service
+	svc       Service
+	permCheck PermissionMiddleware
 }
 
 // NewHandler creates a user HTTP handler.
@@ -19,13 +23,26 @@ func NewHandler(svc Service) *Handler {
 	return &Handler{svc: svc}
 }
 
+// WithPermissionCheck attaches a permission-checking middleware factory to the handler.
+func (h *Handler) WithPermissionCheck(pm PermissionMiddleware) *Handler {
+	h.permCheck = pm
+	return h
+}
+
+func (h *Handler) guard(perms ...string) func(http.Handler) http.Handler {
+	if h.permCheck != nil {
+		return h.permCheck(perms...)
+	}
+	return func(next http.Handler) http.Handler { return next }
+}
+
 // RegisterRoutes mounts user routes onto the given router.
 func (h *Handler) RegisterRoutes(r chi.Router) {
-	r.Post("/users", h.create)
-	r.Get("/users", h.list)
-	r.Get("/users/{id}", h.getByID)
-	r.Patch("/users/{id}", h.update)
-	r.Delete("/users/{id}", h.softDelete)
+	r.With(h.guard("user:create")).Post("/users", h.create)
+	r.With(h.guard("user:list")).Get("/users", h.list)
+	r.With(h.guard("user:read")).Get("/users/{id}", h.getByID)
+	r.With(h.guard("user:update")).Patch("/users/{id}", h.update)
+	r.With(h.guard("user:delete")).Delete("/users/{id}", h.softDelete)
 }
 
 // create handles POST /api/v1/users

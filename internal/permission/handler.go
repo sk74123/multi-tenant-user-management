@@ -7,9 +7,13 @@ import (
 	"github.com/yourusername/multi-tenant-user-management/internal/common"
 )
 
+// PermissionMiddleware creates a route middleware enforcing one of the given permissions.
+type PermissionMiddleware func(perms ...string) func(http.Handler) http.Handler
+
 // Handler wires HTTP routes to the permission service.
 type Handler struct {
-	svc Service
+	svc       Service
+	permCheck PermissionMiddleware
 }
 
 // NewHandler creates a permission HTTP handler.
@@ -17,11 +21,24 @@ func NewHandler(svc Service) *Handler {
 	return &Handler{svc: svc}
 }
 
+// WithPermissionCheck attaches a permission-checking middleware factory to the handler.
+func (h *Handler) WithPermissionCheck(pm PermissionMiddleware) *Handler {
+	h.permCheck = pm
+	return h
+}
+
+func (h *Handler) guard(perms ...string) func(http.Handler) http.Handler {
+	if h.permCheck != nil {
+		return h.permCheck(perms...)
+	}
+	return func(next http.Handler) http.Handler { return next }
+}
+
 // RegisterRoutes mounts permission routes onto the given router.
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/permissions", func(r chi.Router) {
-		r.Post("/", h.create)
-		r.Get("/", h.list)
+		r.With(h.guard("permission:create")).Post("/", h.create)
+		r.With(h.guard("permission:list")).Get("/", h.list)
 	})
 }
 

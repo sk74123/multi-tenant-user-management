@@ -97,20 +97,33 @@ func (r AssignUserRolesRequest) IDs() []uuid.UUID {
 	return out
 }
 
+// PermissionCacheInvalidator invalidates cached permissions when role or user-role mappings change.
+type PermissionCacheInvalidator interface {
+	InvalidateUser(tenantID, userID uuid.UUID)
+	InvalidateTenant(tenantID uuid.UUID)
+}
+
 type service struct {
 	repo     Repository
 	permRepo permission.Repository
 	userRepo user.Repository
+	cacheInv PermissionCacheInvalidator
 }
 
 // NewService creates a new role service.
-func NewService(repo Repository, permRepo permission.Repository, userRepo user.Repository) Service {
+func NewService(repo Repository, permRepo permission.Repository, userRepo user.Repository, cacheInv ...PermissionCacheInvalidator) Service {
+	var inv PermissionCacheInvalidator
+	if len(cacheInv) > 0 {
+		inv = cacheInv[0]
+	}
 	return &service{
 		repo:     repo,
 		permRepo: permRepo,
 		userRepo: userRepo,
+		cacheInv: inv,
 	}
 }
+
 
 func (s *service) Create(ctx context.Context, tenantID uuid.UUID, req CreateRequest) (*domain.Role, error) {
 	name := strings.ToLower(strings.TrimSpace(req.Name))
@@ -141,6 +154,9 @@ func (s *service) Update(ctx context.Context, tenantID, roleID uuid.UUID, req Up
 		return nil, err
 	}
 
+	beforeSnapshot := *role
+	common.SetAuditBefore(ctx, beforeSnapshot)
+
 	if req.Name != nil {
 		newName := strings.ToLower(strings.TrimSpace(*req.Name))
 		if newName != role.Name {
@@ -159,11 +175,26 @@ func (s *service) Update(ctx context.Context, tenantID, roleID uuid.UUID, req Up
 		role.Description = strings.TrimSpace(*req.Description)
 	}
 
-	return s.repo.Update(ctx, role)
+	updated, err := s.repo.Update(ctx, role)
+	if err != nil {
+		return nil, err
+	}
+
+	common.SetAuditAfter(ctx, updated)
+	return updated, nil
 }
 
 func (s *service) Delete(ctx context.Context, tenantID, roleID uuid.UUID) error {
-	return s.repo.Delete(ctx, tenantID, roleID)
+	if existing, err := s.repo.GetByID(ctx, tenantID, roleID); err == nil {
+		common.SetAuditBefore(ctx, existing)
+	}
+	if err := s.repo.Delete(ctx, tenantID, roleID); err != nil {
+		return err
+	}
+	if s.cacheInv != nil {
+		s.cacheInv.InvalidateTenant(tenantID)
+	}
+	return nil
 }
 
 func (s *service) List(ctx context.Context, tenantID uuid.UUID, params ListParams) ([]*domain.Role, int64, error) {
@@ -181,6 +212,10 @@ func (s *service) AssignPermissions(ctx context.Context, tenantID, roleID uuid.U
 		return nil, err
 	}
 
+	if beforePerms, err := s.repo.ListPermissions(ctx, roleID); err == nil {
+		common.SetAuditBefore(ctx, beforePerms)
+	}
+
 	// Verify all permissions exist before assigning
 	for _, pid := range permIDs {
 		if _, err := s.permRepo.GetByID(ctx, pid); err != nil {
@@ -194,7 +229,16 @@ func (s *service) AssignPermissions(ctx context.Context, tenantID, roleID uuid.U
 		}
 	}
 
-	return s.repo.ListPermissions(ctx, roleID)
+	if s.cacheInv != nil {
+		s.cacheInv.InvalidateTenant(tenantID)
+	}
+
+	afterPerms, err := s.repo.ListPermissions(ctx, roleID)
+	if err != nil {
+		return nil, err
+	}
+	common.SetAuditAfter(ctx, afterPerms)
+	return afterPerms, nil
 }
 
 func (s *service) RemovePermission(ctx context.Context, tenantID, roleID, permissionID uuid.UUID) error {
@@ -203,7 +247,21 @@ func (s *service) RemovePermission(ctx context.Context, tenantID, roleID, permis
 		return err
 	}
 
-	return s.repo.RemovePermission(ctx, roleID, permissionID)
+	if beforePerms, err := s.repo.ListPermissions(ctx, roleID); err == nil {
+		common.SetAuditBefore(ctx, beforePerms)
+	}
+
+	if err := s.repo.RemovePermission(ctx, roleID, permissionID); err != nil {
+		return err
+	}
+
+	if s.cacheInv != nil {
+		s.cacheInv.InvalidateTenant(tenantID)
+	}
+	if afterPerms, err := s.repo.ListPermissions(ctx, roleID); err == nil {
+		common.SetAuditAfter(ctx, afterPerms)
+	}
+	return nil
 }
 
 func (s *service) ListPermissions(ctx context.Context, tenantID, roleID uuid.UUID) ([]*domain.Permission, error) {
@@ -226,6 +284,10 @@ func (s *service) AssignRolesToUser(ctx context.Context, tenantID, userID uuid.U
 		return nil, err
 	}
 
+	if beforeRoles, err := s.repo.ListUserRoles(ctx, tenantID, userID); err == nil {
+		common.SetAuditBefore(ctx, beforeRoles)
+	}
+
 	// Verify each role belongs to the same tenant (enforces 404 on cross-tenant role assignment)
 	for _, rid := range roleIDs {
 		if _, err := s.repo.GetByID(ctx, tenantID, rid); err != nil {
@@ -239,7 +301,16 @@ func (s *service) AssignRolesToUser(ctx context.Context, tenantID, userID uuid.U
 		}
 	}
 
-	return s.repo.ListUserRoles(ctx, tenantID, userID)
+	if s.cacheInv != nil {
+		s.cacheInv.InvalidateUser(tenantID, userID)
+	}
+
+	afterRoles, err := s.repo.ListUserRoles(ctx, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+	common.SetAuditAfter(ctx, afterRoles)
+	return afterRoles, nil
 }
 
 func (s *service) RemoveRoleFromUser(ctx context.Context, tenantID, userID, roleID uuid.UUID) error {
@@ -248,7 +319,21 @@ func (s *service) RemoveRoleFromUser(ctx context.Context, tenantID, userID, role
 		return err
 	}
 
-	return s.repo.RemoveRoleFromUser(ctx, tenantID, userID, roleID)
+	if beforeRoles, err := s.repo.ListUserRoles(ctx, tenantID, userID); err == nil {
+		common.SetAuditBefore(ctx, beforeRoles)
+	}
+
+	if err := s.repo.RemoveRoleFromUser(ctx, tenantID, userID, roleID); err != nil {
+		return err
+	}
+
+	if s.cacheInv != nil {
+		s.cacheInv.InvalidateUser(tenantID, userID)
+	}
+	if afterRoles, err := s.repo.ListUserRoles(ctx, tenantID, userID); err == nil {
+		common.SetAuditAfter(ctx, afterRoles)
+	}
+	return nil
 }
 
 func (s *service) ListUserRoles(ctx context.Context, tenantID, userID uuid.UUID) ([]*domain.Role, error) {

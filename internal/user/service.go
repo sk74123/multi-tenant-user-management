@@ -90,6 +90,9 @@ func (s *service) Update(ctx context.Context, tenantID, userID uuid.UUID, req Up
 		return nil, err
 	}
 
+	beforeSnapshot := *u
+	common.SetAuditBefore(ctx, beforeSnapshot)
+
 	if req.FirstName != nil {
 		u.FirstName = *req.FirstName
 	}
@@ -100,10 +103,19 @@ func (s *service) Update(ctx context.Context, tenantID, userID uuid.UUID, req Up
 		u.IsActive = *req.IsActive
 	}
 
-	return s.repo.Update(ctx, u)
+	updated, err := s.repo.Update(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+
+	common.SetAuditAfter(ctx, updated)
+	return updated, nil
 }
 
 func (s *service) SoftDelete(ctx context.Context, tenantID, userID uuid.UUID) error {
+	if u, err := s.repo.GetByIDInTenant(ctx, tenantID, userID); err == nil {
+		common.SetAuditBefore(ctx, u)
+	}
 	return s.repo.SoftDelete(ctx, tenantID, userID)
 }
 

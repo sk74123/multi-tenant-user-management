@@ -57,14 +57,24 @@ func (s *service) Create(ctx context.Context, req CreateRequest) (*domain.Tenant
 }
 
 func (s *service) GetByID(ctx context.Context, id uuid.UUID) (*domain.Tenant, error) {
+	if callerTenantID := common.GetTenantID(ctx); callerTenantID != uuid.Nil && callerTenantID != id {
+		return nil, common.ErrNotFound
+	}
 	return s.repo.GetByID(ctx, id)
 }
 
 func (s *service) Update(ctx context.Context, id uuid.UUID, req UpdateRequest) (*domain.Tenant, error) {
+	if callerTenantID := common.GetTenantID(ctx); callerTenantID != uuid.Nil && callerTenantID != id {
+		return nil, common.ErrNotFound
+	}
+
 	t, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
+
+	beforeSnapshot := *t
+	common.SetAuditBefore(ctx, beforeSnapshot)
 
 	if req.Name != nil {
 		t.Name = *req.Name
@@ -73,8 +83,15 @@ func (s *service) Update(ctx context.Context, id uuid.UUID, req UpdateRequest) (
 		t.Status = domain.TenantStatus(*req.Status)
 	}
 
-	return s.repo.Update(ctx, t)
+	updated, err := s.repo.Update(ctx, t)
+	if err != nil {
+		return nil, err
+	}
+
+	common.SetAuditAfter(ctx, updated)
+	return updated, nil
 }
+
 
 func (s *service) List(ctx context.Context, params ListParams) ([]*domain.Tenant, int64, error) {
 	return s.repo.List(ctx, params)

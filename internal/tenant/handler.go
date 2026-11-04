@@ -8,9 +8,13 @@ import (
 	"github.com/yourusername/multi-tenant-user-management/internal/common"
 )
 
+// PermissionMiddleware creates a route middleware enforcing one of the given permissions.
+type PermissionMiddleware func(perms ...string) func(http.Handler) http.Handler
+
 // Handler wires HTTP routes to the tenant service.
 type Handler struct {
-	svc Service
+	svc       Service
+	permCheck PermissionMiddleware
 }
 
 // NewHandler creates a tenant HTTP handler.
@@ -18,13 +22,26 @@ func NewHandler(svc Service) *Handler {
 	return &Handler{svc: svc}
 }
 
+// WithPermissionCheck attaches a permission-checking middleware factory to the handler.
+func (h *Handler) WithPermissionCheck(pm PermissionMiddleware) *Handler {
+	h.permCheck = pm
+	return h
+}
+
+func (h *Handler) guard(perms ...string) func(http.Handler) http.Handler {
+	if h.permCheck != nil {
+		return h.permCheck(perms...)
+	}
+	return func(next http.Handler) http.Handler { return next }
+}
+
 // RegisterRoutes mounts tenant routes onto the given router.
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/tenants", func(r chi.Router) {
-		r.Post("/", h.create)
-		r.Get("/", h.list)
-		r.Get("/{id}", h.getByID)
-		r.Patch("/{id}", h.update)
+		r.With(h.guard("tenant:create", "tenant:update")).Post("/", h.create)
+		r.With(h.guard("tenant:read")).Get("/", h.list)
+		r.With(h.guard("tenant:read")).Get("/{id}", h.getByID)
+		r.With(h.guard("tenant:update")).Patch("/{id}", h.update)
 	})
 }
 
