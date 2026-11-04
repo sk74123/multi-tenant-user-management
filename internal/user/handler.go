@@ -21,13 +21,11 @@ func NewHandler(svc Service) *Handler {
 
 // RegisterRoutes mounts user routes onto the given router.
 func (h *Handler) RegisterRoutes(r chi.Router) {
-	r.Route("/users", func(r chi.Router) {
-		r.Post("/", h.create)
-		r.Get("/", h.list)
-		r.Get("/{id}", h.getByID)
-		r.Patch("/{id}", h.update)
-		r.Delete("/{id}", h.softDelete)
-	})
+	r.Post("/users", h.create)
+	r.Get("/users", h.list)
+	r.Get("/users/{id}", h.getByID)
+	r.Patch("/users/{id}", h.update)
+	r.Delete("/users/{id}", h.softDelete)
 }
 
 // create handles POST /api/v1/users
