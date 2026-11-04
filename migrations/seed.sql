@@ -2,8 +2,8 @@
 -- Seed Data for Multi-Tenant User Management System
 -- Run via: make seed
 -- Passwords below are bcrypt hash of:
---   Admin@123  → $2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewrczNm1zWXWbMUm
---   User@123   → $2a$12$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi
+--   Admin@123  → $2a$12$tlTWFeW0ByPJKsa67B22BuWiJpts8gvHy0JHTbzug7/TRuRiSPKvW
+--   User@123   → $2a$12$IqpIwRaqQtOIl1OFENVRAOz5fldSuEfmIS43sTVDIV66jRtFPZH2u
 -- =============================================================================
 
 BEGIN;
@@ -16,10 +16,10 @@ ON CONFLICT (code) DO NOTHING;
 
 -- ── Users ─────────────────────────────────────────────────────────────────────
 INSERT INTO users (id, email, password_hash, first_name, last_name, is_active) VALUES
-  ('b0000000-0000-0000-0000-000000000001', 'admin@acme.com',   '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewrczNm1zWXWbMUm', 'Acme',   'Admin',  TRUE),
-  ('b0000000-0000-0000-0000-000000000002', 'user@acme.com',    '$2a$12$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',  'Acme',   'User',   TRUE),
-  ('b0000000-0000-0000-0000-000000000003', 'admin@globex.com', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewrczNm1zWXWbMUm', 'Globex', 'Admin',  TRUE)
-ON CONFLICT (email) DO NOTHING;
+  ('b0000000-0000-0000-0000-000000000001', 'admin@acme.com',   '$2a$12$tlTWFeW0ByPJKsa67B22BuWiJpts8gvHy0JHTbzug7/TRuRiSPKvW', 'Acme',   'Admin',  TRUE),
+  ('b0000000-0000-0000-0000-000000000002', 'user@acme.com',    '$2a$12$IqpIwRaqQtOIl1OFENVRAOz5fldSuEfmIS43sTVDIV66jRtFPZH2u', 'Acme',   'User',   TRUE),
+  ('b0000000-0000-0000-0000-000000000003', 'admin@globex.com', '$2a$12$tlTWFeW0ByPJKsa67B22BuWiJpts8gvHy0JHTbzug7/TRuRiSPKvW', 'Globex', 'Admin',  TRUE)
+ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash;
 
 -- ── Tenant membership ─────────────────────────────────────────────────────────
 INSERT INTO tenant_users (tenant_id, user_id) VALUES
