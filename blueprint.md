@@ -35,8 +35,8 @@ data strictly isolated.
 | **Phase 3** | Roles & Permissions (RBAC, Role-permission & User-role mappings, Effective permissions) | **COMPLETED** ✅ | `d21b8d3`..`967bd30` — Role/Permission CRUD, RBAC mappings, effective permissions & cross-tenant 404 tests verified |
 | **Phase 4** | Authentication & Authorization (Bcrypt, JWT access+refresh tokens, Auth middleware, Cache) | **COMPLETED** ✅ | `2817ba1`..`1c46f77` — JWT access+refresh tokens, auth endpoints, permission middleware + TTL cache & invalidation verified |
 | **Phase 5** | Audit Logging (Mutation audit logs, actor, action, diffs, query endpoint) | **COMPLETED** ✅ | `7aacefc`..`de61f10` — Audit repository/service/handler, automatic mutation audit middleware, paginated/filterable `/audit-logs` verified |
-| **Phase 6** | Automated Tests (Unit, Integration, Cross-tenant isolation test suite) | **PENDING (NEXT)** ⏳ | Ready to start |
-| **Phase 7** | Documentation & Polish (Swagger OpenAPI, Design Doc, ER diagram, Final README) | **PENDING** ⚪ | — |
+| **Phase 6** | Automated Tests (Unit, Integration, Cross-tenant isolation test suite) | **COMPLETED** ✅ | Unit tests for all services + E2E integration suite (`tests/`) covering auth, CRUD, 404 isolation, 403 RBAC, soft-delete & audit logs |
+| **Phase 7** | Documentation & Polish (Swagger OpenAPI, Design Doc, ER diagram, Final README) | **COMPLETED** ✅ | `docs/swagger.yaml`, `docs/design-document.md`, `docs/er-diagram.md`, `README.md`, and `Makefile` targets completed |
 
 ---
 
@@ -329,35 +329,39 @@ paginated, filterable results.
 
 ---
 
-### Phase 6 — Testing `[READY TO START ⏳]`
+### Phase 6 — Testing `[COMPLETED ✅]`
 **Goal:** Comprehensive test coverage.
 
 **Delivers:**
-- Unit tests for every service (mocked repository via interfaces)
-- Integration tests (spin up test DB via Docker, run real SQL)
-  - Auth flow: register → login → access protected route → refresh → logout
-  - CRUD flows for tenants, users, roles, permissions
-  - Cross-tenant isolation: user in tenant A cannot see tenant B data (expects 404)
-  - Permission enforcement: user without `user:create` gets 403
-  - Soft-delete: deleted user excluded from lists but recoverable
-- Test helpers in `tests/setup_test.go`
+- [x] Unit tests for every service (mocked repository via interfaces)
+- [x] Integration tests (`tests/integration_test.go`)
+  - [x] Auth flow: register → login → access protected route → refresh → logout
+  - [x] CRUD flows for tenants, users, roles, permissions
+  - [x] Cross-tenant isolation: user in tenant A cannot see tenant B data (expects 404)
+  - [x] Permission enforcement: user without `user:create` gets 403
+  - [x] Soft-delete: deleted user excluded from lists but recoverable
+- [x] Test helpers in `tests/setup_test.go`
 
 **Done when:** `go test ./...` passes; cross-tenant and permission tests are green.
 
+**Status:** Completed. All unit tests (`internal/tenant`, `internal/user`, `internal/role`, `internal/permission`, `internal/auth`, `internal/audit`, `internal/middleware`) and full-stack E2E tests (`tests/`) pass with `-race`.
+
 ---
 
-### Phase 7 — Documentation & Polish
+### Phase 7 — Documentation & Polish `[COMPLETED ✅]`
 **Goal:** Production-ready docs and final touches.
 
 **Delivers:**
-- `docs/swagger.yaml` — full OpenAPI 3.0 spec (or auto-generated via swaggo)
-- `docs/design-document.md` — 1–2 page design doc (architecture, isolation strategy, RBAC model, token design, scaling, trade-offs, next steps)
-- `docs/er-diagram.md` — rendered ER diagram
-- `README.md` — setup guide (clone, env, docker compose up, seed, test)
-- Makefile targets: `make run`, `make migrate`, `make seed`, `make test`, `make swagger`
+- [x] `docs/swagger.yaml` — full OpenAPI 3.0 spec
+- [x] `docs/design-document.md` — 1–2 page design doc (architecture, isolation strategy, RBAC model, token design, scaling, trade-offs, next steps)
+- [x] `docs/er-diagram.md` — rendered ER diagram
+- [x] `README.md` — setup guide (clone, env, docker compose up, seed, test)
+- [x] Makefile targets: `make run`, `make migrate`, `make seed`, `make test`, `make swagger`
 
 **Done when:** A new developer can clone the repo, run `docker compose up`, and
 have a fully working system with docs.
+
+**Status:** Completed. Full OpenAPI 3.0 spec, system design document, Mermaid ER diagram, updated README, and Makefile targets delivered.
 
 ---
 
