@@ -73,4 +73,3 @@ func ValidationError(w http.ResponseWriter, details interface{}) {
 		},
 	})
 }
-

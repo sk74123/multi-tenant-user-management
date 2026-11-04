@@ -38,4 +38,3 @@ func AsAppError(err error) *AppError {
 	}
 	return ErrInternal
 }
-

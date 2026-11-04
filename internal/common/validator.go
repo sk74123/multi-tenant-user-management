@@ -84,4 +84,3 @@ func toSnakeCase(s string) string {
 	}
 	return result.String()
 }
-

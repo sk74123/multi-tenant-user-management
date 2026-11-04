@@ -40,4 +40,3 @@ func ParsePagination(r *http.Request) PaginationParams {
 
 	return PaginationParams{Page: page, PerPage: perPage}
 }
-
