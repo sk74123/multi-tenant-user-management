@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -19,6 +19,9 @@ import (
 	"github.com/yourusername/multi-tenant-user-management/internal/common"
 	"github.com/yourusername/multi-tenant-user-management/internal/config"
 	"github.com/yourusername/multi-tenant-user-management/internal/database"
+	appmiddleware "github.com/yourusername/multi-tenant-user-management/internal/middleware"
+	"github.com/yourusername/multi-tenant-user-management/internal/tenant"
+	"github.com/yourusername/multi-tenant-user-management/internal/user"
 )
 
 func main() {
@@ -42,25 +45,39 @@ func main() {
 	defer pool.Close()
 	log.Println("database connection pool established")
 
+	// ── Wire dependencies ─────────────────────────────────────────────────────
+	// Tenant
+	tenantRepo := tenant.NewRepository(pool)
+	tenantSvc := tenant.NewService(tenantRepo)
+	tenantHandler := tenant.NewHandler(tenantSvc)
+
+	// User
+	userRepo := user.NewRepository(pool)
+	userSvc := user.NewService(userRepo, cfg.Bcrypt.Cost)
+	userHandler := user.NewHandler(userSvc)
+
 	// ── Build router ──────────────────────────────────────────────────────────
 	r := chi.NewRouter()
 
 	// Global middleware
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(chimiddleware.RequestID)
+	r.Use(chimiddleware.RealIP)
+	r.Use(chimiddleware.Logger)
+	r.Use(chimiddleware.Recoverer)
+	r.Use(chimiddleware.Timeout(60 * time.Second))
 
 	// Health check (unauthenticated)
 	r.Get("/health", healthHandler(pool))
 
-	// API v1 (domain routes will be mounted here in later phases)
+	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
-		// Placeholder — routes will be registered in Phases 2–5
-		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-			common.OK(w, map[string]string{"message": "Multi-Tenant User Management System API v1"})
-		})
+		// Temporary Phase 2 middleware: tenant from X-Tenant-ID header.
+		// Phase 4 replaces this with JWT-based tenant extraction.
+		r.Use(appmiddleware.TenantFromHeader)
+
+		// Domain routes
+		tenantHandler.RegisterRoutes(r)
+		userHandler.RegisterRoutes(r)
 	})
 
 	// ── Start HTTP server ─────────────────────────────────────────────────────
@@ -72,7 +89,6 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
@@ -146,4 +162,3 @@ func runMigrations(cfg *config.Config) error {
 	log.Println("migrations applied successfully")
 	return nil
 }
-
