@@ -32,8 +32,8 @@ data strictly isolated.
 |---|---|---|---|
 | **Phase 1** | Foundation (Docker, Postgres, Migrations, Seed, Domain structs, Utils) | **COMPLETED** ✅ | `a304c0e` — All 9 DB tables, seed data, /health endpoint |
 | **Phase 2** | Tenant & User CRUD (Tenant isolation, Soft delete, Pagination, Validation) | **COMPLETED** ✅ | `d15f330`..`109205f` — Tested 10/10 E2E scenarios, 404 cross-tenant isolation verified |
-| **Phase 3** | Roles & Permissions (RBAC, Role-permission & User-role mappings, Effective permissions) | **PENDING (NEXT)** ⏳ | Ready to start |
-| **Phase 4** | Authentication & Authorization (Bcrypt, JWT access+refresh tokens, Auth middleware, Cache) | **PENDING** ⚪ | — |
+| **Phase 3** | Roles & Permissions (RBAC, Role-permission & User-role mappings, Effective permissions) | **COMPLETED** ✅ | `d21b8d3`..`967bd30` — Role/Permission CRUD, RBAC mappings, effective permissions & cross-tenant 404 tests verified |
+| **Phase 4** | Authentication & Authorization (Bcrypt, JWT access+refresh tokens, Auth middleware, Cache) | **PENDING (NEXT)** ⏳ | Ready to start |
 | **Phase 5** | Audit Logging (Mutation audit logs, actor, action, diffs, query endpoint) | **PENDING** ⚪ | — |
 | **Phase 6** | Automated Tests (Unit, Integration, Cross-tenant isolation test suite) | **PENDING** ⚪ | — |
 | **Phase 7** | Documentation & Polish (Swagger OpenAPI, Design Doc, ER diagram, Final README) | **PENDING** ⚪ | — |
@@ -273,22 +273,25 @@ Standard JSON response envelope:
 
 ---
 
-### Phase 3 — Roles & Permissions (RBAC) `[READY TO START ⏳]`
+### Phase 3 — Roles & Permissions (RBAC) `[COMPLETED ✅]`
 **Goal:** Tenant-scoped roles, global permissions, and role ↔ permission + user ↔ role mappings.
 
 **Delivers:**
-- `internal/role/` — handler, service, repository
-- `internal/permission/` — handler, service, repository
-- Assign/remove permissions to roles
-- Assign/remove roles to users (within a tenant)
-- Get a user's effective permissions (union of all role permissions)
+- [x] `internal/role/` — handler, service, repository
+- [x] `internal/permission/` — handler, service, repository
+- [x] Assign/remove permissions to roles
+- [x] Assign/remove roles to users (within a tenant)
+- [x] Get a user's effective permissions (union of all role permissions)
+- [x] Routes wired in `cmd/server/main.go` and verified via unit/HTTP tests
 
 **Done when:** Can create roles in a tenant, attach permissions, assign roles to
 users, and query a user's effective permission set.
 
+**Status:** Completed in commits `d21b8d3`..`967bd30`. Verified role/permission CRUD, RBAC mappings, effective permission resolution, and cross-tenant 404 isolation.
+
 ---
 
-### Phase 4 — Authentication & Authorization
+### Phase 4 — Authentication & Authorization `[READY TO START ⏳]`
 **Goal:** Secure the API with JWT auth and permission checks.
 
 **Delivers:**
