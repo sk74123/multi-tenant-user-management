@@ -33,9 +33,9 @@ data strictly isolated.
 | **Phase 1** | Foundation (Docker, Postgres, Migrations, Seed, Domain structs, Utils) | **COMPLETED** ✅ | `a304c0e` — All 9 DB tables, seed data, /health endpoint |
 | **Phase 2** | Tenant & User CRUD (Tenant isolation, Soft delete, Pagination, Validation) | **COMPLETED** ✅ | `d15f330`..`109205f` — Tested 10/10 E2E scenarios, 404 cross-tenant isolation verified |
 | **Phase 3** | Roles & Permissions (RBAC, Role-permission & User-role mappings, Effective permissions) | **COMPLETED** ✅ | `d21b8d3`..`967bd30` — Role/Permission CRUD, RBAC mappings, effective permissions & cross-tenant 404 tests verified |
-| **Phase 4** | Authentication & Authorization (Bcrypt, JWT access+refresh tokens, Auth middleware, Cache) | **PENDING (NEXT)** ⏳ | Ready to start |
-| **Phase 5** | Audit Logging (Mutation audit logs, actor, action, diffs, query endpoint) | **PENDING** ⚪ | — |
-| **Phase 6** | Automated Tests (Unit, Integration, Cross-tenant isolation test suite) | **PENDING** ⚪ | — |
+| **Phase 4** | Authentication & Authorization (Bcrypt, JWT access+refresh tokens, Auth middleware, Cache) | **COMPLETED** ✅ | `2817ba1`..`1c46f77` — JWT access+refresh tokens, auth endpoints, permission middleware + TTL cache & invalidation verified |
+| **Phase 5** | Audit Logging (Mutation audit logs, actor, action, diffs, query endpoint) | **COMPLETED** ✅ | `7aacefc`..`de61f10` — Audit repository/service/handler, automatic mutation audit middleware, paginated/filterable `/audit-logs` verified |
+| **Phase 6** | Automated Tests (Unit, Integration, Cross-tenant isolation test suite) | **PENDING (NEXT)** ⏳ | Ready to start |
 | **Phase 7** | Documentation & Polish (Swagger OpenAPI, Design Doc, ER diagram, Final README) | **PENDING** ⚪ | — |
 
 ---
@@ -291,41 +291,45 @@ users, and query a user's effective permission set.
 
 ---
 
-### Phase 4 — Authentication & Authorization `[READY TO START ⏳]`
+### Phase 4 — Authentication & Authorization `[COMPLETED ✅]`
 **Goal:** Secure the API with JWT auth and permission checks.
 
 **Delivers:**
-- `internal/auth/` — handler, service, jwt.go, repository
-- Register, login, refresh, logout endpoints
-- bcrypt password hashing
-- JWT access token (15 min, contains `user_id`, `tenant_id`, `email`)
-- Refresh token (7 days, hashed in DB, rotated on use)
-- `internal/middleware/auth.go` — extracts + validates JWT, sets tenant context
-- `internal/middleware/permission.go` — checks `resource:action` from user's roles, returns 401/403
-- In-memory permission cache with TTL + invalidation
-- Remove temporary `X-Tenant-ID` header; tenant comes from token only
+- [x] `internal/auth/` — handler, service, jwt.go, repository
+- [x] Register, login, refresh, logout endpoints
+- [x] bcrypt password hashing
+- [x] JWT access token (15 min, contains `user_id`, `tenant_id`, `email`)
+- [x] Refresh token (7 days, hashed in DB, rotated on use)
+- [x] `internal/middleware/auth.go` — extracts + validates JWT, sets tenant context
+- [x] `internal/middleware/permission.go` — checks `resource:action` from user's roles, returns 401/403
+- [x] In-memory permission cache with TTL + invalidation
+- [x] Remove temporary `X-Tenant-ID` header; tenant comes from token only
 
 **Done when:** All protected routes require valid JWT; accessing another tenant's
 data returns 404; missing permission returns 403.
 
+**Status:** Completed in commits `2817ba1`..`1c46f77`. Verified JWT access/refresh lifecycle, rotation, revocation, permission cache with invalidation, and strict JWT-only tenant isolation.
+
 ---
 
-### Phase 5 — Audit Logging
+### Phase 5 — Audit Logging `[COMPLETED ✅]`
 **Goal:** Track all meaningful actions.
 
 **Delivers:**
-- `internal/audit/` — service, repository
-- `internal/middleware/audit.go` — captures mutations automatically
-- Audit log entries for: login, user create/update/delete, role create/update/delete, role-permission changes, user-role changes
-- Each entry: `actor_id`, `tenant_id`, `action`, `target_type`, `target_id`, `changes` (JSONB diff), `ip_address`, `created_at`
-- `GET /audit-logs` with pagination + filters (action, target_type, date range)
+- [x] `internal/audit/` — service, repository, handler
+- [x] `internal/middleware/audit.go` — captures mutations automatically
+- [x] Audit log entries for: login, user create/update/delete, role create/update/delete, role-permission changes, user-role changes
+- [x] Each entry: `actor_id`, `tenant_id`, `action`, `target_type`, `target_id`, `changes` (JSONB diff), `ip_address`, `created_at`
+- [x] `GET /audit-logs` with pagination + filters (action, target_type, date range)
 
 **Done when:** Every mutation creates an audit row; audit-logs endpoint returns
 paginated, filterable results.
 
+**Status:** Completed in commits `7aacefc`..`de61f10`. Verified automatic mutation capture with sanitized JSONB diffs and paginated/filterable `GET /api/v1/audit-logs`.
+
 ---
 
-### Phase 6 — Testing
+### Phase 6 — Testing `[READY TO START ⏳]`
 **Goal:** Comprehensive test coverage.
 
 **Delivers:**
