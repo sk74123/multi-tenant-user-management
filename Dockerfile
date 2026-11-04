@@ -5,11 +5,12 @@ RUN apk add --no-cache git
 
 WORKDIR /app
 
-COPY go.mod ./
+COPY go.mod go.sum ./
+RUN go mod download
 
 COPY . .
 
-RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server
 
 # ---- Runtime stage ----
 FROM alpine:3.19
