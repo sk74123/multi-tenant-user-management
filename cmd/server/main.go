@@ -20,6 +20,8 @@ import (
 	"github.com/yourusername/multi-tenant-user-management/internal/config"
 	"github.com/yourusername/multi-tenant-user-management/internal/database"
 	appmiddleware "github.com/yourusername/multi-tenant-user-management/internal/middleware"
+	"github.com/yourusername/multi-tenant-user-management/internal/permission"
+	"github.com/yourusername/multi-tenant-user-management/internal/role"
 	"github.com/yourusername/multi-tenant-user-management/internal/tenant"
 	"github.com/yourusername/multi-tenant-user-management/internal/user"
 )
@@ -56,6 +58,16 @@ func main() {
 	userSvc := user.NewService(userRepo, cfg.Bcrypt.Cost)
 	userHandler := user.NewHandler(userSvc)
 
+	// Permission
+	permissionRepo := permission.NewRepository(pool)
+	permissionSvc := permission.NewService(permissionRepo)
+	permissionHandler := permission.NewHandler(permissionSvc)
+
+	// Role (RBAC)
+	roleRepo := role.NewRepository(pool)
+	roleSvc := role.NewService(roleRepo, permissionRepo, userRepo)
+	roleHandler := role.NewHandler(roleSvc)
+
 	// ── Build router ──────────────────────────────────────────────────────────
 	r := chi.NewRouter()
 
@@ -78,6 +90,8 @@ func main() {
 		// Domain routes
 		tenantHandler.RegisterRoutes(r)
 		userHandler.RegisterRoutes(r)
+		roleHandler.RegisterRoutes(r)
+		permissionHandler.RegisterRoutes(r)
 	})
 
 	// ── Start HTTP server ─────────────────────────────────────────────────────
