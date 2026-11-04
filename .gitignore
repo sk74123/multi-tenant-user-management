@@ -1,0 +1,32 @@
+# Binaries
+bin/
+/server
+
+# Environment files (never commit secrets)
+.env
+*.env.local
+
+# Go test cache and coverage
+*.test
+*.out
+coverage.html
+
+# Go build cache
+vendor/
+
+# Docker volumes / data
+postgres_data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Swagger generated files (regenerated via make swagger)
+docs/swagger.json
+docs/docs.go

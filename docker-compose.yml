@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mtums_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mtums
+      POSTGRES_PASSWORD: mtums_secret
+      POSTGRES_DB: mtums_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mtums -d mtums_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mtums_app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      APP_PORT: 8080
+      APP_ENV: development
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: mtums
+      DB_PASSWORD: mtums_secret
+      DB_NAME: mtums_db
+      DB_SSL_MODE: disable
+      DB_MAX_CONNS: 25
+      DB_MIN_CONNS: 5
+      JWT_ACCESS_SECRET: change-me-access-secret-must-be-32-chars-min
+      JWT_REFRESH_SECRET: change-me-refresh-secret-must-be-32-chars-min
+      JWT_ACCESS_EXPIRY: 15m
+      JWT_REFRESH_EXPIRY: 168h
+      BCRYPT_COST: 12
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+

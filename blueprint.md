@@ -1,0 +1,374 @@
+# Multi-Tenant User Management System — Blueprint
+
+> This is the single source of truth for the project. Each phase references this
+> document so we never repeat context.
+
+---
+
+## 1. What We Are Building
+
+A **multi-tenant User Management System** in **Go + PostgreSQL** that lets
+multiple organizations (tenants) share a single database while keeping their
+data strictly isolated.
+
+### Core capabilities
+
+| Capability | Summary |
+|---|---|
+| **Tenants** | Create/manage organizations — name, unique code, active/suspended status |
+| **Users** | CRUD + soft-delete; a user can belong to **multiple** tenants |
+| **Roles** | Tenant-scoped roles; a user can hold multiple roles per tenant |
+| **Permissions** | `resource:action` strings (e.g. `user:create`) mapped to roles (RBAC) |
+| **Authentication** | Email/password login, bcrypt hashing, JWT access + refresh tokens scoped to one tenant |
+| **Authorization** | Middleware validates JWT, checks permissions — returns **401** (no token) or **403** (no permission) |
+| **Tenant isolation** | Shared DB, shared schema, `tenant_id` column; tenant derived from JWT only; cross-tenant → **404** |
+| **Audit logs** | Tracks login, user/role/assignment/permission changes with actor, action, target, timestamp |
+
+---
+
+## 2. Tech Stack
+
+| Component | Choice | Why |
+|---|---|---|
+| Language | Go 1.26 | Already installed |
+| Database | PostgreSQL 16 | Robust, JSON support for audit `changes` |
+| Router | `chi/v5` | Lightweight, idiomatic, excellent middleware |
+| DB driver | `pgx/v5` + `pgxpool` | Native PG driver with built-in connection pooling |
+| Migrations | `golang-migrate/v4` | SQL-file based, no ORM lock-in |
+| JWT | `golang-jwt/v5` | Industry-standard JWT library |
+| Hashing | `golang.org/x/crypto/bcrypt` | bcrypt cost 12 |
+| Validation | `go-playground/validator/v10` | Struct tag validation |
+| UUIDs | `google/uuid` | UUID v4 for all primary keys |
+| Testing | `stretchr/testify` | Assertions + mocks |
+| Docs | `swaggo/swag` | Auto-generate Swagger from comments |
+| Env | `joho/godotenv` | Load `.env` files |
+
+---
+
+## 3. Prerequisites
+
+### 3.1 Tools required
+
+| Tool | Version (minimum) | Check |
+|---|---|---|
+| Go | 1.21+ | `go version` |
+| Docker | 24+ | `docker --version` |
+| Docker Compose | v2+ | `docker compose version` |
+| Make | any | `make --version` |
+| curl / httpie | any | For manual API testing |
+
+### 3.2 Docker images
+
+| Image | Tag | Purpose |
+|---|---|---|
+| `postgres` | `16-alpine` | Database |
+| `golang` | `1.23-alpine` | App build (multi-stage Dockerfile) |
+| `alpine` | `3.19` | Final runtime image |
+
+### 3.3 Ports
+
+| Service | Port |
+|---|---|
+| App (HTTP) | `8080` |
+| PostgreSQL | `5432` |
+
+### 3.4 Environment variables
+
+```env
+# Server
+APP_PORT=8080
+APP_ENV=development
+
+# Database
+DB_HOST=postgres
+DB_PORT=5432
+DB_USER=mtums
+DB_PASSWORD=mtums_secret
+DB_NAME=mtums_db
+DB_SSL_MODE=disable
+DB_MAX_CONNS=25
+DB_MIN_CONNS=5
+
+# JWT
+JWT_ACCESS_SECRET=change-me-access-secret-min-32-chars
+JWT_REFRESH_SECRET=change-me-refresh-secret-min-32-chars
+JWT_ACCESS_EXPIRY=15m
+JWT_REFRESH_EXPIRY=168h
+
+# Bcrypt
+BCRYPT_COST=12
+```
+
+---
+
+## 4. Database Schema (Quick Reference)
+
+Nine tables. All use UUID PKs. Tenant-scoped tables carry a `tenant_id` FK.
+
+```
+tenants              (id, name, code, status, created_at, updated_at)
+users                (id, email, password_hash, first_name, last_name, is_active, deleted_at, created_at, updated_at)
+tenant_users         (id, tenant_id, user_id, is_active, created_at)              UNIQUE(tenant_id, user_id)
+roles                (id, tenant_id, name, description, created_at, updated_at)   UNIQUE(tenant_id, name)
+permissions          (id, resource, action, description, created_at)              UNIQUE(resource, action)
+role_permissions     (id, role_id, permission_id, created_at)                     UNIQUE(role_id, permission_id)
+user_roles           (id, tenant_id, user_id, role_id, created_at)                UNIQUE(tenant_id, user_id, role_id)
+refresh_tokens       (id, user_id, tenant_id, token_hash, expires_at, revoked, created_at)
+audit_logs           (id, tenant_id, actor_id, action, target_type, target_id, changes, ip_address, created_at)
+```
+
+Key indexes (created in migrations):
+- `idx_tenant_users_tenant_id` / `idx_tenant_users_user_id`
+- `idx_roles_tenant_id`
+- `idx_user_roles_tenant_id_user_id`
+- `idx_audit_logs_tenant_id_created_at`
+- `idx_refresh_tokens_token_hash`
+- `idx_users_email`
+- `idx_users_deleted_at`
+
+---
+
+## 5. Project Structure
+
+```
+multi-tenant-user-management/
+├── cmd/server/main.go           # Entry point — wires everything
+├── internal/
+│   ├── config/config.go         # Loads env vars into a struct
+│   ├── database/postgres.go     # pgxpool connection
+│   ├── middleware/               # auth.go, permission.go, audit.go
+│   ├── domain/                   # Pure structs: tenant.go, user.go, role.go, permission.go, audit.go
+│   ├── tenant/                   # handler.go, service.go, repository.go
+│   ├── user/                     # handler.go, service.go, repository.go
+│   ├── role/                     # handler.go, service.go, repository.go
+│   ├── permission/               # handler.go, service.go, repository.go
+│   ├── auth/                     # handler.go, service.go, jwt.go, repository.go
+│   ├── audit/                    # service.go, repository.go
+│   └── common/                   # errors.go, pagination.go, response.go, validator.go
+├── migrations/                   # .up.sql / .down.sql files + seed.sql
+├── tests/                        # Integration tests
+├── docs/                         # design-document.md, swagger.yaml, er-diagram.md
+├── docker-compose.yml
+├── Dockerfile
+├── Makefile
+├── .env.example
+├── go.mod
+└── README.md
+```
+
+Each domain module follows the same pattern:
+```
+handler.go      — HTTP handlers (parse request, call service, write response)
+service.go      — Business logic (validation, orchestration)
+repository.go   — SQL queries (accepts pgxpool, returns domain structs)
+```
+
+---
+
+## 6. API Overview
+
+All routes are prefixed with `/api/v1`.
+
+### Public (no auth)
+```
+POST   /auth/register          Register a user + join a tenant
+POST   /auth/login             Returns access_token + refresh_token
+POST   /auth/refresh           Rotate tokens
+```
+
+### Protected (JWT required, tenant from token)
+```
+POST   /auth/logout                         Revoke refresh token
+
+GET    /tenants/:id                          tenant:read
+PATCH  /tenants/:id                          tenant:update
+POST   /tenants                              tenant:create
+
+GET    /users                                user:list       (paginated, filterable)
+GET    /users/:id                            user:read
+POST   /users                                user:create
+PATCH  /users/:id                            user:update
+DELETE /users/:id                            user:delete      (soft)
+
+GET    /roles                                role:list
+POST   /roles                                role:create
+PATCH  /roles/:id                            role:update
+DELETE /roles/:id                            role:delete
+POST   /roles/:id/permissions                role:update
+DELETE /roles/:id/permissions/:pid           role:update
+
+GET    /users/:id/roles                      user:read
+POST   /users/:id/roles                      user:assign_role
+DELETE /users/:id/roles/:rid                 user:assign_role
+
+GET    /permissions                          permission:list
+POST   /permissions                          permission:create
+
+GET    /audit-logs                           audit:read       (paginated, filterable)
+```
+
+Standard JSON response envelope:
+```json
+{
+  "success": true,
+  "data": {},
+  "meta": { "page": 1, "per_page": 20, "total": 100 },
+  "error": { "code": "VALIDATION_ERROR", "message": "...", "details": [] }
+}
+```
+
+---
+
+## 7. Phases
+
+### Phase 1 — Foundation
+**Goal:** Runnable project skeleton with Docker, DB connection, migrations, and helpers.
+
+**Delivers:**
+- `go.mod` with all dependencies
+- `docker-compose.yml` (postgres + app)
+- `Dockerfile` (multi-stage)
+- `Makefile` (common commands)
+- `.env.example`
+- `internal/config/` — config loader
+- `internal/database/` — pgxpool setup
+- `internal/common/` — errors, pagination, response, validator
+- `internal/domain/` — all domain structs
+- `migrations/` — all 9 tables (up + down)
+- `migrations/seed.sql` — default tenant, admin user, roles, permissions
+- `cmd/server/main.go` — boots server, runs migrations, health-check endpoint
+
+**Done when:** `docker compose up` starts the app, runs migrations, and
+`GET /health` returns `200`.
+
+---
+
+### Phase 2 — Tenant & User CRUD
+**Goal:** Full CRUD for tenants and users with tenant isolation.
+
+**Delivers:**
+- `internal/tenant/` — handler, service, repository
+- `internal/user/` — handler, service, repository (with soft-delete)
+- Routes wired in `main.go`
+- Input validation on all create/update endpoints
+- Pagination + filtering on list endpoints
+- Tenant-scoped queries (`WHERE tenant_id = $1`)
+
+**Done when:** Can create tenants, create users in a tenant, list/update/soft-delete
+users, and pagination works.
+
+> Note: Auth middleware is **not** enforced yet — tenant_id comes from a
+> header (`X-Tenant-ID`) temporarily so we can test. Phase 3 replaces this.
+
+---
+
+### Phase 3 — Roles & Permissions (RBAC)
+**Goal:** Tenant-scoped roles, global permissions, and role ↔ permission + user ↔ role mappings.
+
+**Delivers:**
+- `internal/role/` — handler, service, repository
+- `internal/permission/` — handler, service, repository
+- Assign/remove permissions to roles
+- Assign/remove roles to users (within a tenant)
+- Get a user's effective permissions (union of all role permissions)
+
+**Done when:** Can create roles in a tenant, attach permissions, assign roles to
+users, and query a user's effective permission set.
+
+---
+
+### Phase 4 — Authentication & Authorization
+**Goal:** Secure the API with JWT auth and permission checks.
+
+**Delivers:**
+- `internal/auth/` — handler, service, jwt.go, repository
+- Register, login, refresh, logout endpoints
+- bcrypt password hashing
+- JWT access token (15 min, contains `user_id`, `tenant_id`, `email`)
+- Refresh token (7 days, hashed in DB, rotated on use)
+- `internal/middleware/auth.go` — extracts + validates JWT, sets tenant context
+- `internal/middleware/permission.go` — checks `resource:action` from user's roles, returns 401/403
+- In-memory permission cache with TTL + invalidation
+- Remove temporary `X-Tenant-ID` header; tenant comes from token only
+
+**Done when:** All protected routes require valid JWT; accessing another tenant's
+data returns 404; missing permission returns 403.
+
+---
+
+### Phase 5 — Audit Logging
+**Goal:** Track all meaningful actions.
+
+**Delivers:**
+- `internal/audit/` — service, repository
+- `internal/middleware/audit.go` — captures mutations automatically
+- Audit log entries for: login, user create/update/delete, role create/update/delete, role-permission changes, user-role changes
+- Each entry: `actor_id`, `tenant_id`, `action`, `target_type`, `target_id`, `changes` (JSONB diff), `ip_address`, `created_at`
+- `GET /audit-logs` with pagination + filters (action, target_type, date range)
+
+**Done when:** Every mutation creates an audit row; audit-logs endpoint returns
+paginated, filterable results.
+
+---
+
+### Phase 6 — Testing
+**Goal:** Comprehensive test coverage.
+
+**Delivers:**
+- Unit tests for every service (mocked repository via interfaces)
+- Integration tests (spin up test DB via Docker, run real SQL)
+  - Auth flow: register → login → access protected route → refresh → logout
+  - CRUD flows for tenants, users, roles, permissions
+  - Cross-tenant isolation: user in tenant A cannot see tenant B data (expects 404)
+  - Permission enforcement: user without `user:create` gets 403
+  - Soft-delete: deleted user excluded from lists but recoverable
+- Test helpers in `tests/setup_test.go`
+
+**Done when:** `go test ./...` passes; cross-tenant and permission tests are green.
+
+---
+
+### Phase 7 — Documentation & Polish
+**Goal:** Production-ready docs and final touches.
+
+**Delivers:**
+- `docs/swagger.yaml` — full OpenAPI 3.0 spec (or auto-generated via swaggo)
+- `docs/design-document.md` — 1–2 page design doc (architecture, isolation strategy, RBAC model, token design, scaling, trade-offs, next steps)
+- `docs/er-diagram.md` — rendered ER diagram
+- `README.md` — setup guide (clone, env, docker compose up, seed, test)
+- Makefile targets: `make run`, `make migrate`, `make seed`, `make test`, `make swagger`
+
+**Done when:** A new developer can clone the repo, run `docker compose up`, and
+have a fully working system with docs.
+
+---
+
+## 8. Conventions
+
+| Area | Convention |
+|---|---|
+| Error responses | `{ "success": false, "error": { "code": "...", "message": "..." } }` |
+| IDs | UUID v4 everywhere |
+| Timestamps | UTC, ISO 8601 |
+| Soft delete | `deleted_at IS NULL` filter on all user queries |
+| Pagination | `?page=1&per_page=20`, max 100 |
+| Filtering | Query params: `?search=john&status=active` |
+| Naming | snake_case in JSON, DB; camelCase in Go structs with json tags |
+| Tenant context | Stored in `context.Context` after auth middleware |
+| SQL | Raw SQL via pgx — no ORM |
+
+---
+
+## 9. Seed Data
+
+Created in `migrations/seed.sql`:
+
+- **Tenant:** "Acme Corp" (code: `acme`, active)
+- **Tenant:** "Globex Inc" (code: `globex`, active)
+- **Admin user:** `admin@acme.com` / `Admin@123` → member of Acme
+- **Regular user:** `user@acme.com` / `User@123` → member of Acme
+- **Globex user:** `admin@globex.com` / `Admin@123` → member of Globex
+- **Roles:** `admin`, `manager`, `viewer` in each tenant
+- **Permissions:** `tenant:read`, `tenant:update`, `user:create`, `user:read`, `user:update`, `user:delete`, `user:list`, `user:assign_role`, `role:create`, `role:read`, `role:list`, `role:update`, `role:delete`, `permission:create`, `permission:list`, `audit:read`
+- **admin role** gets all permissions; **viewer** gets read/list only
+
