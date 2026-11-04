@@ -1,4 +1,4 @@
-.PHONY: run build migrate-up migrate-down seed test swagger docker-up docker-down tidy
+.PHONY: run build migrate migrate-up migrate-down seed test test-integration swagger docker-up docker-down tidy
 
 # ── Local dev ──────────────────────────────────────────────────────────────────
 run:
@@ -13,6 +13,8 @@ tidy:
 # ── Database ───────────────────────────────────────────────────────────────────
 # Requires migrate CLI: https://github.com/golang-migrate/migrate
 DSN := "postgres://mtums:mtums_secret@localhost:5432/mtums_db?sslmode=disable"
+
+migrate: migrate-up
 
 migrate-up:
 	migrate -path ./migrations -database $(DSN) up
@@ -31,7 +33,7 @@ test:
 	go test -v -race ./...
 
 test-integration:
-	go test -v -race -tags=integration ./tests/...
+	go test -v -race ./tests/...
 
 # ── Docker ─────────────────────────────────────────────────────────────────────
 docker-up:
@@ -48,5 +50,10 @@ docker-db:
 
 # ── Swagger ────────────────────────────────────────────────────────────────────
 swagger:
-	swag init -g cmd/server/main.go -o docs
+	@if command -v swag >/dev/null 2>&1; then \
+		swag init -g cmd/server/main.go -o docs; \
+	else \
+		echo "OpenAPI 3.0 specification available at docs/swagger.yaml"; \
+	fi
+
 
