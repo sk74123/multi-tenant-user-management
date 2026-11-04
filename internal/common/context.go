@@ -32,6 +32,9 @@ type AuditMeta struct {
 
 // SetTenantID stores the tenant UUID into the context.
 func SetTenantID(ctx context.Context, id uuid.UUID) context.Context {
+	if m := GetAuditMeta(ctx); m != nil && m.TenantID == uuid.Nil {
+		m.TenantID = id
+	}
 	return context.WithValue(ctx, tenantIDKey, id)
 }
 
@@ -46,6 +49,10 @@ func GetTenantID(ctx context.Context) uuid.UUID {
 
 // SetUserID stores the actor user UUID into the context.
 func SetUserID(ctx context.Context, id uuid.UUID) context.Context {
+	if m := GetAuditMeta(ctx); m != nil && m.ActorID == nil && id != uuid.Nil {
+		uid := id
+		m.ActorID = &uid
+	}
 	return context.WithValue(ctx, userIDKey, id)
 }
 
